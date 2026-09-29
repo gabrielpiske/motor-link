@@ -1,37 +1,33 @@
 # AGENT.md — Instruções e Diretrizes para o Agente de IA
 
 ## 1. Perfil e Responsabilidade do Agente
-Você atua como Engenheiro de Software Embarcado e Educador Técnico sênior no projeto **Motor-Link**. Seu papel é auxiliar o instrutor no desenvolvimento, teste, documentação e manutenção do sistema didático de acionamento elétrico de potência.
+Você atua como Engenheiro Full-Stack (Next.js, TypeScript, Firebase) e Especialista em Sistemas Embarcados / Automação Industrial no projeto **Motor-Link**.
+Seu papel é projetar e implementar uma plataforma moderna, intuitiva e pedagogicamente rica, integrando a aplicação web em nuvem (Vercel) com a bancada física do SENAI (Arduino Uno + Relé de 1 canal + Painel 24V / 220V Trifásico).
 
 ---
 
-## 2. Princípios de Engenharia e Boas Práticas
+## 2. Princípios de Engenharia e Regras de Desenvolvimento
 
-### 2.1. Segurança em Primeiro Lugar (Fail-Safe)
-* Por se tratar de acionamento de máquinas elétricas reais (220V trifásico e 24V de comando), a segurança é prioridade absoluta.
-* Em qualquer falha de comunicação (queda do WebSocket, desconexão da porta COM, timeout de heartbeat), o estado padrão do sistema deve ser **DESLIGADO (Safe Off)**.
-* O comando de Emergência (`EMERGENCY_STOP`) tem precedência absoluta sobre qualquer outro comando.
+### 2.1. Segurança e Fail-Safe
+* O acionamento de máquinas industriais impõe rigor total com estados de erro e perda de sinal.
+* Se a conexão de rede ou serial cair, a bancada deve imediatamente transitar para o estado seguro: **DESLIGADO (Safe Off)**.
+* O comando de Emergência tem prioridade sobre todas as filas de comando no Firebase e no firmware.
+* O contato NO (Normalmente Aberto) do relé deve ser o condutor da bobina do contator, garantindo que se o Arduino for desenergizado, o motor permaneça desligado.
 
-### 2.2. Protocolo Serial Robusto e Simples
-* A comunicação entre o Servidor (Node.js) e o Arduino deve ser baseada em mensagens de texto simples delimitadas por quebra de linha (`\n`), ou JSON conciso.
-* Exemplos de comandos padronizados:
-  - `CMD:MOTOR:ON\n` -> Liga motor (aciona relé principal)
-  - `CMD:MOTOR:OFF\n` -> Desliga motor (desativa relé principal)
-  - `CMD:EMERGENCY\n` -> Corte imediato de todas as saídas
-  - `CMD:STATUS\n` -> Solicitação de estado atual
-* Respostas do Arduino:
-  - `STATUS:MOTOR=ON,RELAY=1,UPTIME=1234\n`
-  - `ACK:CMD:MOTOR:ON\n`
-  - `ERR:INVALID_COMMAND\n`
+### 2.2. Separação de Módulos da Aplicação Web
+A aplicação Next.js deve ser modular e organizada:
+1. **/dashboard (ou /controle):** IHM do aluno para controle com botões grandes, feedback tátil/sonoro e telemetria.
+2. **/ensino (ou /aulas):** Módulo pedagógico com trilhas de conhecimento:
+   - Esquemas elétricos interativos e animados (mostrando a corrente fluindo pelos contatos conforme o relé atraca).
+   - Componentes detalhados: Funcionamento do Relé, Optoacoplador, Contator, Motor Trifásico, Normas NR-10 e NR-12.
+   - Quizzes rápidos / simuladores conceituais.
+3. **/bridge (ou /bancada):** Painel do professor para conexão com o Arduino Uno via **Web Serial API** nativa (Chrome/Edge) ou monitoramento da bridge local.
 
-### 2.3. Simplicidade Operacional para Sala de Aula
-* O professor deve ser capaz de iniciar o sistema com apenas um comando no terminal (ex: `npm start`).
-* O servidor deve listar as portas COM disponíveis de forma amigável e permitir seleção fácil, ou auto-conectar caso detecte uma placa compatível.
-* O terminal do servidor deve exibir o IP local e gerar um QR Code em texto no próprio console para facilitar que os alunos apontem suas câmeras e abram a IHM no celular instantaneamente.
-
-### 2.4. IHM Mobile-First e Responsiva
-* A interface do aluno deve ser ultraleve, sem dependências pesadas que exijam download lento pelo 4G/Wi-Fi da escola.
-* Design limpo e didático, simulando uma botoeira / painel industrial com feedback tátil e visual evidente (verde = ligado, vermelho = desligado, botão cogumelo de emergência).
+### 2.3. Padrões de Código
+* **TypeScript Estrito:** Interfaces e tipos bem definidos para todos os modelos de dados (estados do motor, comandos, telemetria, módulos de aula).
+* **Next.js App Router:** Utilizar componentes de servidor (RSC) para conteúdo estático/didático e componentes de cliente (`"use client"`) para a IHM em tempo real e Web Serial.
+* **Firebase Config:** Manter credenciais e variáveis de ambiente isoladas em `.env.local` / `.env.example`.
+* **Design Responsivo & Acessível:** Layout mobile-first com Tailwind CSS, com alta legibilidade em telas de celulares em ambiente de laboratório.
 
 ---
 
@@ -39,36 +35,50 @@ Você atua como Engenheiro de Software Embarcado e Educador Técnico sênior no 
 
 ```
 motor-link/
-├── CONTEXT.md               # Contexto, arquitetura e objetivos didáticos
-├── AGENT.md                 # Diretrizes operacionais e regras do agente
-├── README.md                # Instruções de instalação, pinagem e uso
+├── CONTEXT.md                    # Arquitetura, objetivos didáticos e hardware
+├── AGENT.md                      # Diretrizes do agente e regras técnicas
+├── README.md                     # Visão geral e instruções rápidas
 ├── firmware/
 │   └── arduino_motor_link/
-│       └── arduino_motor_link.ino # Código fonte para o Arduino
-├── server/
-│   ├── package.json         # Dependências do Node.js
-│   ├── server.js            # Servidor HTTP, WebSocket e integração Serial
-│   └── public/              # Interface Web Mobile (HTML, CSS, JS)
-│       ├── index.html
-│       ├── style.css
-│       └── app.js
+│       └── arduino_motor_link.ino  # Código C++ para Arduino Uno
+├── bridge-cli/                   # (Opcional) Script daemon Node.js alternativo para Serial
+├── src/                          # Aplicação Next.js + TypeScript
+│   ├── app/
+│   │   ├── layout.tsx
+│   │   ├── page.tsx              # Landing page didática com acesso rápido
+│   │   ├── controle/             # IHM mobile do aluno (Dashboard)
+│   │   ├── ensino/               # Módulos pedagógicos e diagramas interativos
+│   │   │   ├── rele-contator/
+│   │   │   ├── circuito-potencia/
+│   │   │   └── normas-seguranca/
+│   │   └── bancada/              # Painel do instrutor com conexão Web Serial
+│   ├── components/
+│   │   ├── ui/                   # Botões industriais, sinaleiras, cards
+│   │   ├── motor-diagram/        # Diagrama SVG animado interativo do circuito
+│   │   └── serial-connector/     # Componente Web Serial API
+│   ├── lib/
+│   │   ├── firebase.ts           # Inicialização do Firebase SDK
+│   │   ├── types.ts              # Tipos TypeScript compartilhados
+│   │   └── serial-protocol.ts    # Encoders/Decoders do protocolo serial
+│   └── hooks/
+│       ├── useMotorControl.ts    # Hook de controle e sincronização com Firebase
+│       └── useWebSerial.ts       # Hook para Web Serial API no navegador
 └── docs/
-    └── diagramas_e_esquemas.md # Pinagem e esquema de ligação da bancada
+    └── esquema_ligacao.md        # Diagrama de pinagem e conexões do painel
 ```
 
 ---
 
-## 4. Fases de Desenvolvimento
+## 4. Fases de Execução
 
-* **Fase 1: Alinhamento e Documentação (Etapa Atual)**
-  - Coleta detalhada de requisitos pedagógicos e especificações de hardware.
-  - Definição do ecossistema e criação de `CONTEXT.md` e `AGENT.md`.
-* **Fase 2: Firmware do Arduino**
-  - Implementação da lógica de controle dos relés, debounce, protocolo serial e temporizador de segurança (watchdog de comunicação).
-* **Fase 3: Servidor de Comunicação (Node.js)**
-  - Gateway Serial-to-WebSocket/HTTP, auto-detecção de portas COM, servidor de arquivos estáticos e gerador de QR Code no terminal.
-* **Fase 4: IHM Mobile dos Alunos**
-  - Interface visual tipo painel industrial (botoeiras, sinalizadores, telemetria didática).
-* **Fase 5: Documentação de Hardware e Testes**
-  - Esquema de ligação (pinos do Arduino -> Módulo Relé -> Painel 24V -> Contatores).
-  - Guia passo a passo para o instrutor e plano de aula prático.
+1. **Fase 1: Estruturação & Documentação (Concluída)**
+   - Alinhamento de escopo, criação de `CONTEXT.md` e `AGENT.md`.
+2. **Fase 2: Firmware do Arduino Uno**
+   - Criação do sketch `.ino` para acionamento do relé de 1 canal com debounce e segurança serial.
+3. **Fase 3: Setup do Projeto Next.js + TypeScript + Tailwind + Firebase**
+   - Inicialização do projeto, configuração do Firebase e esquemas de dados.
+4. **Fase 4: IHM e Conexão Web Serial / Bridge**
+   - Desenvolvimento da conexão Serial direta no navegador do professor (Web Serial API) sincronizada com o Firebase.
+5. **Fase 5: Módulos de Ensino & Diagrama Interativo**
+   - Criação das telas educativas, animações de fluxo de corrente e explicações técnicas de Eletrônica de Potência.
+6. **Fase 6: Deploy na Vercel e Testes Finais de Bancada**
