@@ -46,7 +46,7 @@ export default function SupervisorPage() {
 
   const handleResetAll = async () => {
     for (let i = 1; i <= TOTAL_BANCADAS; i++) {
-      await sendCommandToBancada(String(i), 'OFF', 'CLEAR', 'Supervisor (Liberação Geral)');
+      await sendCommandToBancada(String(i), 'OFF', 'CLEAR', 'Supervisor (Liberação Geral)', 'RESET_EMERGENCY');
     }
     setEmergencyFeedback('Todas as bancadas foram resetadas e liberadas para aula.');
     setTimeout(() => setEmergencyFeedback(null), 5000);
@@ -193,7 +193,7 @@ export default function SupervisorPage() {
               {/* Botões de Ação do Instrutor na Bancada Específica */}
               <div className="pt-2 border-t border-slate-800/80 flex gap-1.5">
                 <button
-                  onClick={() => sendCommandToBancada(id, isMotorOn ? 'OFF' : 'ON', isEmerg ? 'CLEAR' : 'CLEAR', 'Professor')}
+                  onClick={() => sendCommandToBancada(id, isMotorOn ? 'OFF' : 'ON', 'CLEAR', 'Professor', isMotorOn ? 'STOP' : 'START')}
                   className={`flex-1 py-1.5 px-2 rounded-lg text-[10px] font-bold transition-all ${
                     isMotorOn
                       ? 'bg-slate-800 hover:bg-slate-700 text-rose-300'
@@ -203,7 +203,7 @@ export default function SupervisorPage() {
                   {isMotorOn ? 'Desligar' : 'Ligar'}
                 </button>
                 <button
-                  onClick={() => sendCommandToBancada(id, 'OFF', 'ACTIVE', 'Professor (Emergência)')}
+                  onClick={() => sendCommandToBancada(id, 'OFF', 'ACTIVE', 'Professor (Emergência)', 'EMERGENCY')}
                   className="py-1.5 px-2.5 rounded-lg bg-rose-600/20 border border-rose-500/40 hover:bg-rose-600 text-rose-300 hover:text-white text-[10px] font-bold transition-all"
                   title="Parada de Emergência nesta bancada"
                 >

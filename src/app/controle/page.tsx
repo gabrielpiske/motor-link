@@ -65,14 +65,14 @@ function ControleContent() {
 
     setMotorState('ON');
     setLastActionTime(new Date().toLocaleTimeString());
-    await sendCommandToBancada(bancadaId, 'ON', 'CLEAR', `Celular (Bancada ${bancadaId})`);
+    await sendCommandToBancada(bancadaId, 'ON', 'CLEAR', `Celular (Bancada ${bancadaId})`, 'START');
     showFeedback(`Comando enviado para BANCADA ${bancadaId}: Relé acionado ➔ Contator ➔ Motor 220V`);
   };
 
   const handleStop = async () => {
     setMotorState('OFF');
     setLastActionTime(new Date().toLocaleTimeString());
-    await sendCommandToBancada(bancadaId, 'OFF', emergencyState, `Celular (Bancada ${bancadaId})`);
+    await sendCommandToBancada(bancadaId, 'OFF', emergencyState, `Celular (Bancada ${bancadaId})`, 'STOP');
     showFeedback(`Comando enviado para BANCADA ${bancadaId}: Motor desligado.`);
   };
 
@@ -80,14 +80,14 @@ function ControleContent() {
     setEmergencyState('ACTIVE');
     setMotorState('OFF');
     setLastActionTime(new Date().toLocaleTimeString());
-    await sendCommandToBancada(bancadaId, 'OFF', 'ACTIVE', `Celular (Bancada ${bancadaId})`);
+    await sendCommandToBancada(bancadaId, 'OFF', 'ACTIVE', `Celular (Bancada ${bancadaId})`, 'EMERGENCY');
     showFeedback(`EMERGÊNCIA ACIONADA NA BANCADA ${bancadaId}! Circuito interrompido.`);
   };
 
   const handleResetEmergency = async () => {
     setEmergencyState('CLEAR');
     setLastActionTime(new Date().toLocaleTimeString());
-    await sendCommandToBancada(bancadaId, 'OFF', 'CLEAR', `Celular (Bancada ${bancadaId})`);
+    await sendCommandToBancada(bancadaId, 'OFF', 'CLEAR', `Celular (Bancada ${bancadaId})`, 'RESET_EMERGENCY');
     showFeedback(`Emergência destravada na Bancada ${bancadaId}. Sistema pronto.`);
   };
 

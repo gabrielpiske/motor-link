@@ -1,7 +1,7 @@
 import { initializeApp, getApps, getApp, type FirebaseApp } from 'firebase/app';
 import { getDatabase, ref, onValue, set, update, type Database } from 'firebase/database';
 import { getFirestore, type Firestore } from 'firebase/firestore';
-import type { BancadaTelemetry, MotorState, EmergencyState } from '@/types';
+import type { BancadaTelemetry, MotorState, EmergencyState, BancadaAction } from '@/types';
 
 const firebaseConfig = {
   apiKey: process.env.NEXT_PUBLIC_FIREBASE_API_KEY || '',
@@ -67,6 +67,7 @@ export function subscribeToBancada(
 
 /**
  * Atualiza o estado da bancada (chamado pelo PC da bancada com o Arduino conectado).
+ * Não altera timestamps de comando para evitar loops de reprocessamento.
  */
 export async function updateBancada(
   bancadaId: string, 
@@ -74,10 +75,7 @@ export async function updateBancada(
 ): Promise<void> {
   if (rtdb) {
     const bancadaRef = ref(rtdb, `bancadas/${bancadaId}`);
-    await update(bancadaRef, {
-      ...data,
-      lastCommandAt: Date.now(),
-    });
+    await update(bancadaRef, data);
   }
 
   // Sempre emite no BroadcastChannel local para sincronizar testes no mesmo computador
@@ -89,19 +87,31 @@ export async function updateBancada(
 }
 
 /**
- * Envia um comando do celular do aluno para a bancada específica.
+ * Envia um comando do celular do aluno ou do professor para a bancada específica.
  */
 export async function sendCommandToBancada(
   bancadaId: string,
   motorState: MotorState,
   emergencyState: EmergencyState,
-  sender: string = 'Celular do Aluno'
+  sender: string = 'Celular do Aluno',
+  action?: BancadaAction
 ): Promise<void> {
-  const payload = {
+  const resolvedAction: BancadaAction = action ?? (
+    emergencyState === 'ACTIVE'
+      ? 'EMERGENCY'
+      : motorState === 'ON'
+      ? 'START'
+      : 'STOP'
+  );
+
+  const payload: Partial<BancadaTelemetry> = {
     motorState,
     emergencyState,
+    targetMotorState: motorState,
+    targetEmergencyState: emergencyState,
     lastCommandBy: sender,
     lastCommandAt: Date.now(),
+    lastCommandAction: resolvedAction,
   };
 
   if (rtdb) {
@@ -142,7 +152,7 @@ export function subscribeToAllBancadas(
 export async function emergencyStopAllBancadas(totalBancadas: number = 12): Promise<void> {
   for (let i = 1; i <= totalBancadas; i++) {
     const id = String(i);
-    await sendCommandToBancada(id, 'OFF', 'ACTIVE', 'Professor (Emergência Geral da Sala)');
+    await sendCommandToBancada(id, 'OFF', 'ACTIVE', 'Professor (Emergência Geral da Sala)', 'EMERGENCY');
   }
 }
 

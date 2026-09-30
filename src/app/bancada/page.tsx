@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { 
   Cpu, 
   Usb, 
@@ -30,6 +30,19 @@ export default function BancadaPage() {
   const [qrCodeDataUrl, setQrCodeDataUrl] = useState<string>('');
   const [controlUrl, setControlUrl] = useState<string>('');
 
+  // Controle de comandos processados para evitar loops de repetição
+  const lastProcessedCommandRef = useRef<number>(Date.now());
+  const emergencyStateRef = useRef<EmergencyState>(emergencyState);
+  const isConnectedRef = useRef<boolean>(isConnected);
+
+  useEffect(() => {
+    emergencyStateRef.current = emergencyState;
+  }, [emergencyState]);
+
+  useEffect(() => {
+    isConnectedRef.current = isConnected;
+  }, [isConnected]);
+
   // Atualiza a URL e gera o QR Code sempre que o bancadaId mudar
   useEffect(() => {
     setBrowserSupported(webSerial.isSupported());
@@ -53,30 +66,64 @@ export default function BancadaPage() {
   // Escuta os comandos vindos do celular do aluno para esta bancada
   useEffect(() => {
     addLog(`[SISTEMA] Monitorando comandos para a BANCADA ${bancadaId}`, 'info');
+    // Reinicia o timestamp de corte para a bancada atual
+    lastProcessedCommandRef.current = Date.now();
 
     const unsubscribe = subscribeToBancada(bancadaId, async (data) => {
-      if (data.emergencyState === 'ACTIVE') {
+      // Ignora atualizações que não sejam comandos novos (ex: telemetria, status, leituras antigas)
+      if (!data.lastCommandAt || data.lastCommandAt <= lastProcessedCommandRef.current) {
+        return;
+      }
+
+      // Registra que este comando foi atendido para cortar qualquer loop
+      lastProcessedCommandRef.current = data.lastCommandAt;
+
+      const sender = data.lastCommandBy || 'Celular';
+      const action = data.lastCommandAction;
+
+      // 1. Comando de Emergência
+      if (action === 'EMERGENCY' || data.emergencyState === 'ACTIVE') {
         setEmergencyState('ACTIVE');
         setMotorState('OFF');
         await sendSerialCommand('CMD:EMERGENCY');
-        addLog(`[ALUNO] Emergência acionada na Bancada ${bancadaId}!`, 'err');
-      } else if (data.motorState) {
-        if (data.motorState === 'ON' && emergencyState !== 'ACTIVE') {
-          setMotorState('ON');
-          await sendSerialCommand('CMD:MOTOR:ON');
-          addLog(`[ALUNO] Partida do motor solicitada pelo celular!`, 'in');
-        } else if (data.motorState === 'OFF') {
-          setMotorState('OFF');
-          await sendSerialCommand('CMD:MOTOR:OFF');
-          addLog(`[ALUNO] Parada do motor solicitada pelo celular!`, 'in');
+        addLog(`[${sender}] PARADA DE EMERGÊNCIA acionada na Bancada ${bancadaId}!`, 'err');
+        return;
+      }
+
+      // 2. Destravamento de Emergência
+      if (action === 'RESET_EMERGENCY') {
+        setEmergencyState('CLEAR');
+        await sendSerialCommand('CMD:RESET_EMERGENCY');
+        addLog(`[${sender}] Destravamento de emergência solicitado.`, 'info');
+        return;
+      }
+
+      // 3. Comando de Partida (Ligar)
+      const targetMotor = data.targetMotorState ?? data.motorState;
+      if (action === 'START' || targetMotor === 'ON') {
+        if (emergencyStateRef.current === 'ACTIVE') {
+          addLog(`[BLOQUEIO] Partida rejeitada: Emergência ATIVA na Bancada ${bancadaId}! Destrave o botão de segurança.`, 'err');
+          return;
         }
+        setMotorState('ON');
+        await sendSerialCommand('CMD:MOTOR:ON');
+        addLog(`[${sender}] Partida do motor solicitada!`, 'in');
+        return;
+      }
+
+      // 4. Comando de Parada (Desligar)
+      if (action === 'STOP' || targetMotor === 'OFF') {
+        setMotorState('OFF');
+        await sendSerialCommand('CMD:MOTOR:OFF');
+        addLog(`[${sender}] Parada do motor solicitada!`, 'in');
+        return;
       }
     });
 
     return () => {
       unsubscribe();
     };
-  }, [bancadaId, emergencyState, isConnected]);
+  }, [bancadaId]);
 
   const addLog = (text: string, type: 'in' | 'out' | 'info' | 'err' = 'info') => {
     setLogs((prev) => [
@@ -119,11 +166,13 @@ export default function BancadaPage() {
         } else if (line.includes('STATUS:MOTOR=OFF')) {
           setMotorState('OFF');
           updateBancada(bancadaId, { motorState: 'OFF' });
-        } else if (line.includes('ALERT:EMERGENCY_ACTIVATED')) {
+        }
+
+        if (line.includes('ALERT:EMERGENCY_ACTIVATED') || line.includes('EMERGENCY=ACTIVE')) {
           setEmergencyState('ACTIVE');
           setMotorState('OFF');
           updateBancada(bancadaId, { motorState: 'OFF', emergencyState: 'ACTIVE' });
-        } else if (line.includes('INFO:EMERGENCY_RESET')) {
+        } else if (line.includes('INFO:EMERGENCY_RESET') || line.includes('EMERGENCY=CLEAR')) {
           setEmergencyState('CLEAR');
           updateBancada(bancadaId, { emergencyState: 'CLEAR' });
         }
@@ -145,17 +194,27 @@ export default function BancadaPage() {
 
   const sendSerialCommand = async (cmd: string) => {
     addLog(`PC ➔ ARDUINO: ${cmd}`, 'out');
-    if (isConnected) {
+    if (isConnectedRef.current) {
       await webSerial.sendCommand(cmd);
     } else {
       addLog(`(Aviso: Arduino físico não conectado. Simulando comando localmente)`, 'info');
-      if (cmd === 'CMD:MOTOR:ON') setMotorState('ON');
-      if (cmd === 'CMD:MOTOR:OFF') setMotorState('OFF');
+      if (cmd === 'CMD:MOTOR:ON') {
+        setMotorState('ON');
+        updateBancada(bancadaId, { motorState: 'ON' });
+      }
+      if (cmd === 'CMD:MOTOR:OFF') {
+        setMotorState('OFF');
+        updateBancada(bancadaId, { motorState: 'OFF' });
+      }
       if (cmd === 'CMD:EMERGENCY') {
         setEmergencyState('ACTIVE');
         setMotorState('OFF');
+        updateBancada(bancadaId, { motorState: 'OFF', emergencyState: 'ACTIVE' });
       }
-      if (cmd === 'CMD:RESET_EMERGENCY') setEmergencyState('CLEAR');
+      if (cmd === 'CMD:RESET_EMERGENCY') {
+        setEmergencyState('CLEAR');
+        updateBancada(bancadaId, { emergencyState: 'CLEAR' });
+      }
     }
   };
 
@@ -306,7 +365,7 @@ export default function BancadaPage() {
             {/* Teste Manual pelo Computador */}
             <div className="pt-2 border-t border-slate-800/80">
               <span className="block text-[11px] font-bold text-slate-400 mb-2">Comandos Locais (Teste na Bancada):</span>
-              <div className="flex gap-2">
+              <div className="flex flex-wrap gap-2">
                 <button
                   onClick={() => sendSerialCommand('CMD:MOTOR:ON')}
                   className="flex-1 py-2.5 px-3 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs"
@@ -326,6 +385,14 @@ export default function BancadaPage() {
                   <OctagonAlert className="w-4 h-4" />
                   <span>Emergência</span>
                 </button>
+                {emergencyState === 'ACTIVE' && (
+                  <button
+                    onClick={() => sendSerialCommand('CMD:RESET_EMERGENCY')}
+                    className="py-2.5 px-3 rounded-xl bg-cyan-600 hover:bg-cyan-500 text-white font-bold text-xs flex items-center gap-1.5"
+                  >
+                    <span>Destravar</span>
+                  </button>
+                )}
               </div>
             </div>
           </div>
