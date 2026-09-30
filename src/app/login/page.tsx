@@ -72,7 +72,7 @@ function LoginContent() {
           </div>
           <div>
             <h1 className="text-3xl font-extrabold tracking-tight text-white">
-              Motor-Link <span className="bg-clip-text text-transparent bg-gradient-to-r from-amber-400 to-yellow-400">V2</span>
+              <span className="bg-clip-text text-transparent bg-gradient-to-r from-amber-400 to-yellow-400">Motor-Link</span>
             </h1>
             <p className="text-xs text-slate-400 mt-1">
               SENAI • Eletrônica de Potência — Controle de Acionamentos
