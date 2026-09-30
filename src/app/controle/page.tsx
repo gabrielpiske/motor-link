@@ -116,9 +116,9 @@ function ControleContent() {
       {/* Seletor Rápido de Bancada (Expansível) */}
       {showBancadaSelector && (
         <div className="p-4 rounded-2xl bg-slate-900 border border-amber-500/30 space-y-2 animate-in fade-in">
-          <span className="block text-[11px] font-bold text-slate-300">Escolha a sua Bancada:</span>
+          <span className="block text-[11px] font-bold text-slate-300">Escolha a sua Bancada (1 a 12):</span>
           <div className="grid grid-cols-4 gap-2">
-            {['1', '2', '3', '4', '5', '6', '7', '8'].map((id) => (
+            {['1', '2', '3', '4', '5', '6', '7', '8', '9', '10', '11', '12'].map((id) => (
               <button
                 key={id}
                 onClick={() => {

@@ -53,10 +53,18 @@ export default function RootLayout({
 
               <Link
                 href="/bancada"
-                className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold text-amber-300 bg-amber-500/10 border border-amber-500/30 hover:bg-amber-500/20 transition-colors"
+                className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold text-slate-300 hover:text-white hover:bg-slate-800/80 transition-colors"
               >
                 <Cpu className="w-4 h-4 text-amber-400" />
                 <span>Bancada (USB)</span>
+              </Link>
+
+              <Link
+                href="/supervisor"
+                className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold text-rose-300 bg-rose-500/10 border border-rose-500/30 hover:bg-rose-500/20 transition-colors"
+              >
+                <ShieldAlert className="w-4 h-4 text-rose-400" />
+                <span className="hidden sm:inline">Supervisor (12)</span>
               </Link>
             </nav>
           </div>

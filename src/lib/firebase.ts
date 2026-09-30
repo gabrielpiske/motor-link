@@ -116,4 +116,34 @@ export async function sendCommandToBancada(
   } catch {}
 }
 
+/**
+ * Escuta todas as bancadas do laboratório simultaneamente (Painel do Supervisor/Professor).
+ */
+export function subscribeToAllBancadas(
+  callback: (bancadas: Record<string, Partial<BancadaTelemetry>>) => void
+): () => void {
+  if (rtdb) {
+    const bancadasRef = ref(rtdb, 'bancadas');
+    const unsubscribe = onValue(bancadasRef, (snapshot) => {
+      const data = snapshot.val();
+      if (data) {
+        callback(data);
+      }
+    });
+    return () => unsubscribe();
+  }
+
+  return () => {};
+}
+
+/**
+ * Aciona parada de emergência geral em todas as 12 bancadas simultaneamente (Corte Geral da Sala).
+ */
+export async function emergencyStopAllBancadas(totalBancadas: number = 12): Promise<void> {
+  for (let i = 1; i <= totalBancadas; i++) {
+    const id = String(i);
+    await sendCommandToBancada(id, 'OFF', 'ACTIVE', 'Professor (Emergência Geral da Sala)');
+  }
+}
+
 export { app, db, rtdb };

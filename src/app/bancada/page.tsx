@@ -174,15 +174,15 @@ export default function BancadaPage() {
             Cada aluno conecta o seu Arduino Uno nesta tela e aponta a câmera do celular para o QR Code abaixo.
           </p>
 
-          {/* Selecionador de Bancada */}
-          <div className="flex items-center gap-2 mt-4">
+          {/* Selecionador de Bancada (1 a 12) */}
+          <div className="flex flex-wrap items-center gap-2 mt-4">
             <span className="text-xs font-bold text-slate-300">Número da Bancada:</span>
-            <div className="flex items-center gap-1.5">
-              {['1', '2', '3', '4', '5', '6', '7', '8'].map((num) => (
+            <div className="flex flex-wrap items-center gap-1.5">
+              {['1', '2', '3', '4', '5', '6', '7', '8', '9', '10', '11', '12'].map((num) => (
                 <button
                   key={num}
                   onClick={() => setBancadaId(num)}
-                  className={`w-8 h-8 rounded-lg font-bold text-xs transition-all ${
+                  className={`w-7 h-7 sm:w-8 sm:h-8 rounded-lg font-bold text-xs transition-all ${
                     bancadaId === num
                       ? 'bg-amber-500 text-slate-950 shadow-md shadow-amber-500/30 scale-105'
                       : 'bg-slate-800 text-slate-400 hover:text-white hover:bg-slate-700'
