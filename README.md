@@ -63,34 +63,34 @@ A topologia de comunicação foi projetada para garantir **baixa latência**, **
 
 ```mermaid
 flowchart TD
-    subgraph Nuvem [" ☁️ Nuvem & Aplicação Web "]
-        Aluno["📱 Smartphone / PC do Aluno<br/><b>IHM de Controle (Next.js)</b>"]
-        Vercel["▲ Vercel Edge Network<br/><b>App Router & SSR</b>"]
-        Firebase["🔥 Firebase Realtime Database<br/><b>Sync de Estados & Comandos</b>"]
-        Firestore["🗄️ Cloud Firestore<br/><b>Usuários, Turmas & RBAC</b>"]
+    subgraph Nuvem ["☁️ Nuvem & Aplicação Web"]
+        Aluno["📱 Smartphone / PC do Aluno<br/>IHM de Controle (Next.js)"]
+        Vercel["▲ Vercel Edge Network<br/>App Router & SSR"]
+        Firebase["🔥 Firebase Realtime Database<br/>Sync de Estados & Comandos"]
+        Firestore["🗄️ Cloud Firestore<br/>Usuários, Turmas & RBAC"]
     end
 
-    subgraph Edge [" 💻 Estação do Instrutor / Bancada "]
-        WebSerial["🌐 Web Serial API (Navegador)<br/><b>Google Chrome / Edge Bridge</b>"]
+    subgraph Edge ["💻 Estação do Instrutor / Bancada"]
+        WebSerial["🌐 Web Serial API (Navegador)<br/>Google Chrome / Edge Bridge"]
     end
 
-    subgraph Hardware [" ⚡ Bancada Física de Potência "]
-        Arduino["🤖 Arduino Uno R3<br/><b>Firmware C++ (115200 baud)</b>"]
-        Rele["📦 Módulo Relé 1 Canal<br/><b>Optoacoplador + Bobina 5V</b>"]
-        Comando24V["🎛️ Painel de Comando 24VDC<br/><b>Fonte 24V + Sinaleiras</b>"]
-        Contator["⚡ Contator Industrial (K1)<br/><b>Bobina A1/A2 (24VDC)</b>"]
-        Motor["⚙️ Motor Trifásico de Indução<br/><b>Força 220VAC Trifásica</b>"]
+    subgraph Hardware ["⚡ Bancada Física de Potência"]
+        Arduino["🤖 Arduino Uno R3<br/>Firmware C++ (115200 baud)"]
+        Rele["📦 Módulo Relé 1 Canal<br/>Optoacoplador + Bobina 5V"]
+        Comando24V["🎛️ Painel de Comando 24VDC<br/>Fonte 24V + Sinaleiras"]
+        Contator["⚡ Contator Industrial (K1)<br/>Bobina A1/A2 (24VDC)"]
+        Motor["⚙️ Motor Trifásico de Indução<br/>Força 220VAC Trifásica"]
     end
 
-    Aluno -->|HTTPS / WSS| Vercel
-    Aluno -->|Escrita de Comandos| Firebase
+    Aluno -->|"HTTPS / WSS"| Vercel
+    Aluno -->|"Escrita de Comandos"| Firebase
     Vercel --> Firestore
-    Firebase <-->|Escuta Realtime State| WebSerial
-    WebSerial <-->|Serial USB (COMx)| Arduino
-    Arduino -->|Pino Digital D7 (LOW Ativo)| Rele
-    Rele -->|Chaveamento COM ➔ NO| Comando24V
-    Comando24V -->|Energiza Bobina A1/A2| Contator
-    Contator -->|Fecha Contatos 1-2, 3-4, 5-6| Motor
+    Firebase <-->|"Escuta Realtime State"| WebSerial
+    WebSerial <-->|"Serial USB - Porta COM"| Arduino
+    Arduino -->|"Pino Digital D7 - LOW Ativo"| Rele
+    Rele -->|"Chaveamento COM para NO"| Comando24V
+    Comando24V -->|"Energiza Bobina A1/A2"| Contator
+    Contator -->|"Fecha Contatos 1-2, 3-4, 5-6"| Motor
 
     classDef cloud fill:#0f172a,stroke:#38bdf8,stroke-width:2px,color:#fff;
     classDef edge fill:#1e293b,stroke:#f59e0b,stroke-width:2px,color:#fff;
@@ -118,17 +118,17 @@ sequenceDiagram
     participant Contator as ⚡ Contator K1 (24V)
     participant Motor as ⚙️ Motor 220V 3F
 
-    Aluno->>RTDB: Grava comando `START` (idempotência UUID)
+    Aluno->>RTDB: Grava comando START (UUID)
     RTDB-->>WebSerial: Push de evento em tempo real via WebSocket
-    WebSerial->>Arduino: Envia frame serial: `CMD:MOTOR:ON\n`
+    WebSerial->>Arduino: Envia frame serial: CMD:MOTOR:ON
     Note over Arduino: Valida se Emergência está desativada
     Arduino->>Rele: Seta Pino D7 em nível LOW (Active LOW)
-    Rele->>Contator: Fecha contato COM ➔ NO (+24V na bobina A1)
+    Rele->>Contator: Fecha contato COM para NO (+24V na bobina A1)
     Contator->>Motor: Atraca contatos de força L1-L2-L3 (220VAC)
     Motor-->>Motor: Motor entra em rotação nominal
     Arduino->>Arduino: Acende LED onboard D13
-    Arduino-->>WebSerial: Resposta serial: `STATUS:MOTOR=ON`
-    WebSerial->>RTDB: Atualiza telemetria: `motorState = "ON"`
+    Arduino-->>WebSerial: Resposta serial: STATUS:MOTOR=ON
+    WebSerial->>RTDB: Atualiza telemetria: motorState = ON
     RTDB-->>Aluno: Sincroniza IHM: Sinaleira Verde LIGADA
 ```
 
