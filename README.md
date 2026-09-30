@@ -1,5 +1,3 @@
-# Motor-Link ⚡📱🏭
-
 <div align="center">
 
 ![Motor-Link Banner](docs/images/motor_link_banner.jpg)
