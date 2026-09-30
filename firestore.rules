@@ -11,6 +11,7 @@ service cloud.firestore {
     // Helper: Verifica se o usuário logado possui a role 'admin'
     function isAdmin() {
       return isAuthenticated() && 
+        exists(/databases/$(database)/documents/users/$(request.auth.uid)) &&
         get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin';
     }
 
@@ -19,8 +20,11 @@ service cloud.firestore {
       // Usuário pode ler seu próprio perfil, ou admin pode ler todos
       allow read: if isAuthenticated() && (request.auth.uid == userId || isAdmin());
       
-      // Apenas Administrador pode criar ou alterar papéis e designações de bancadas
-      allow write: if isAdmin();
+      // Permite criar o documento inicial no cadastro (pelo próprio usuário autenticado ou por um admin)
+      allow create: if isAuthenticated() && (request.auth.uid == userId || isAdmin());
+      
+      // Apenas Administrador pode alterar permissões, designações de bancadas ou deletar perfis
+      allow update, delete: if isAdmin();
     }
   }
 }
