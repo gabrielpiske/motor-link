@@ -2,11 +2,14 @@ export type MotorState = 'ON' | 'OFF';
 export type EmergencyState = 'ACTIVE' | 'CLEAR';
 
 export interface BancadaTelemetry {
+  id: string; // ex: '1', '2', '3'
+  name: string; // ex: 'Bancada 01'
   motorState: MotorState;
   emergencyState: EmergencyState;
   lastCommandBy: string; // ex: 'Aluno (Celular)' ou 'Professor (Painel)'
   lastCommandAt: number; // timestamp
   arduinoConnected: boolean;
+  studentConnected: boolean;
   activeRelayPin: number;
   uptimeSeconds: number;
 }

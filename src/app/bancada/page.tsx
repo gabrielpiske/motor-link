@@ -8,64 +8,79 @@ import {
   Wifi, 
   Power, 
   OctagonAlert, 
-  RefreshCw, 
-  CheckCircle, 
   AlertTriangle,
   QrCode,
-  Share2
+  Layers,
+  CheckCircle2,
+  ExternalLink
 } from 'lucide-react';
+import QRCode from 'qrcode';
 import { webSerial } from '@/lib/webserial';
+import { subscribeToBancada, updateBancada, sendCommandToBancada } from '@/lib/firebase';
 import type { MotorState, EmergencyState } from '@/types';
 
 export default function BancadaPage() {
+  const [bancadaId, setBancadaId] = useState<string>('1');
   const [isConnected, setIsConnected] = useState(false);
-  const [portInfo, setPortInfo] = useState<string>('Nenhuma porta conectada');
+  const [portInfo, setPortInfo] = useState<string>('Aguardando porta USB');
   const [logs, setLogs] = useState<{ time: string; text: string; type: 'in' | 'out' | 'info' | 'err' }[]>([]);
   const [motorState, setMotorState] = useState<MotorState>('OFF');
   const [emergencyState, setEmergencyState] = useState<EmergencyState>('CLEAR');
   const [browserSupported, setBrowserSupported] = useState(true);
-  const [shareUrl, setShareUrl] = useState<string>('');
+  const [qrCodeDataUrl, setQrCodeDataUrl] = useState<string>('');
+  const [controlUrl, setControlUrl] = useState<string>('');
 
+  // Atualiza a URL e gera o QR Code sempre que o bancadaId mudar
   useEffect(() => {
     setBrowserSupported(webSerial.isSupported());
     if (typeof window !== 'undefined') {
-      setShareUrl(`${window.location.origin}/controle`);
-    }
+      const url = `${window.location.origin}/controle?bancada=${bancadaId}`;
+      setControlUrl(url);
 
-    // Ouvinte para comandos vindos da IHM do Aluno via BroadcastChannel
-    let channel: BroadcastChannel | null = null;
-    try {
-      channel = new BroadcastChannel('motor-link-sync');
-      channel.onmessage = async (event) => {
-        const { type, payload } = event.data;
-        if (type === 'COMMAND') {
-          addLog(`[REDE] Comando recebido de ${payload.sender}: Motor=${payload.motorState}, Emergência=${payload.emergencyState}`, 'info');
-          
-          if (payload.emergencyState === 'ACTIVE') {
-            await sendSerialCommand('CMD:EMERGENCY');
-            setEmergencyState('ACTIVE');
-            setMotorState('OFF');
-          } else if (payload.motorState === 'ON') {
-            await sendSerialCommand('CMD:MOTOR:ON');
-            setMotorState('ON');
-          } else if (payload.motorState === 'OFF') {
-            await sendSerialCommand('CMD:MOTOR:OFF');
-            setMotorState('OFF');
-          }
-        }
-      };
-    } catch (e) {
-      console.warn('BroadcastChannel não disponível.', e);
+      QRCode.toDataURL(url, {
+        width: 260,
+        margin: 1.5,
+        color: {
+          dark: '#0f172a',
+          light: '#ffffff',
+        },
+      })
+        .then((dataUrl) => setQrCodeDataUrl(dataUrl))
+        .catch((err) => console.error('Erro ao gerar QR Code:', err));
     }
+  }, [bancadaId]);
+
+  // Escuta os comandos vindos do celular do aluno para esta bancada
+  useEffect(() => {
+    addLog(`[SISTEMA] Monitorando comandos para a BANCADA ${bancadaId}`, 'info');
+
+    const unsubscribe = subscribeToBancada(bancadaId, async (data) => {
+      if (data.emergencyState === 'ACTIVE') {
+        setEmergencyState('ACTIVE');
+        setMotorState('OFF');
+        await sendSerialCommand('CMD:EMERGENCY');
+        addLog(`[ALUNO] Emergência acionada na Bancada ${bancadaId}!`, 'err');
+      } else if (data.motorState) {
+        if (data.motorState === 'ON' && emergencyState !== 'ACTIVE') {
+          setMotorState('ON');
+          await sendSerialCommand('CMD:MOTOR:ON');
+          addLog(`[ALUNO] Partida do motor solicitada pelo celular!`, 'in');
+        } else if (data.motorState === 'OFF') {
+          setMotorState('OFF');
+          await sendSerialCommand('CMD:MOTOR:OFF');
+          addLog(`[ALUNO] Parada do motor solicitada pelo celular!`, 'in');
+        }
+      }
+    });
 
     return () => {
-      channel?.close();
+      unsubscribe();
     };
-  }, []);
+  }, [bancadaId, emergencyState, isConnected]);
 
   const addLog = (text: string, type: 'in' | 'out' | 'info' | 'err' = 'info') => {
     setLogs((prev) => [
-      ...prev.slice(-40),
+      ...prev.slice(-35),
       {
         time: new Date().toLocaleTimeString(),
         text,
@@ -75,37 +90,42 @@ export default function BancadaPage() {
   };
 
   const handleConnect = async () => {
-    addLog('Iniciando solicitação de porta serial ao usuário...', 'info');
+    addLog(`Iniciando conexão USB com o Arduino da Bancada ${bancadaId}...`, 'info');
 
     const ok = await webSerial.connect(115200, {
       onConnected: (info) => {
         setIsConnected(true);
         setPortInfo(info);
-        addLog(`Porta serial conectada com sucesso (${info})`, 'info');
+        addLog(`Arduino Uno da Bancada ${bancadaId} conectado! (${info})`, 'info');
         webSerial.sendCommand('CMD:STATUS');
+        updateBancada(bancadaId, {
+          arduinoConnected: true,
+          motorState,
+          emergencyState,
+        });
       },
       onDisconnected: () => {
         setIsConnected(false);
         setPortInfo('Desconectado');
-        addLog('Porta serial desconectada.', 'err');
+        addLog(`Arduino Uno da Bancada ${bancadaId} desconectado.`, 'err');
+        updateBancada(bancadaId, { arduinoConnected: false });
       },
       onLineReceived: (line) => {
         addLog(`ARDUINO ➔ ${line}`, 'in');
 
-        // Parse de respostas do Arduino
         if (line.includes('STATUS:MOTOR=ON')) {
           setMotorState('ON');
-          broadcastCurrentState('ON', emergencyState);
+          updateBancada(bancadaId, { motorState: 'ON' });
         } else if (line.includes('STATUS:MOTOR=OFF')) {
           setMotorState('OFF');
-          broadcastCurrentState('OFF', emergencyState);
+          updateBancada(bancadaId, { motorState: 'OFF' });
         } else if (line.includes('ALERT:EMERGENCY_ACTIVATED')) {
           setEmergencyState('ACTIVE');
           setMotorState('OFF');
-          broadcastCurrentState('OFF', 'ACTIVE');
+          updateBancada(bancadaId, { motorState: 'OFF', emergencyState: 'ACTIVE' });
         } else if (line.includes('INFO:EMERGENCY_RESET')) {
           setEmergencyState('CLEAR');
-          broadcastCurrentState(motorState, 'CLEAR');
+          updateBancada(bancadaId, { emergencyState: 'CLEAR' });
         }
       },
       onError: (err) => {
@@ -114,7 +134,7 @@ export default function BancadaPage() {
     });
 
     if (!ok) {
-      addLog('Falha ao conectar com o dispositivo serial.', 'err');
+      addLog('Falha ao selecionar porta serial.', 'err');
     }
   };
 
@@ -128,7 +148,7 @@ export default function BancadaPage() {
     if (isConnected) {
       await webSerial.sendCommand(cmd);
     } else {
-      addLog('Aviso: Arduino não está conectado via USB. Comando simulado localmente.', 'info');
+      addLog(`(Aviso: Arduino físico não conectado. Simulando comando localmente)`, 'info');
       if (cmd === 'CMD:MOTOR:ON') setMotorState('ON');
       if (cmd === 'CMD:MOTOR:OFF') setMotorState('OFF');
       if (cmd === 'CMD:EMERGENCY') {
@@ -139,181 +159,217 @@ export default function BancadaPage() {
     }
   };
 
-  const broadcastCurrentState = (m: MotorState, e: EmergencyState) => {
-    try {
-      const channel = new BroadcastChannel('motor-link-sync');
-      channel.postMessage({
-        type: 'STATE_UPDATE',
-        payload: {
-          motorState: m,
-          emergencyState: e,
-          timestamp: Date.now(),
-        },
-      });
-      channel.close();
-    } catch (err) {}
-  };
-
   return (
     <div className="max-w-5xl mx-auto px-4 py-8 space-y-8">
-      {/* Header */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-slate-800 pb-4">
+      {/* Topo: Seleção da Bancada e Conexão USB */}
+      <div className="p-6 rounded-3xl bg-slate-900 border border-slate-800 shadow-xl flex flex-col md:flex-row md:items-center justify-between gap-6">
         <div>
           <div className="flex items-center gap-2">
             <Cpu className="w-6 h-6 text-amber-400" />
-            <h1 className="text-2xl font-bold text-white">Bancada do Instrutor & Gateway Serial</h1>
+            <h1 className="text-xl sm:text-2xl font-black text-white">
+              Painel do Computador — Bancada de Ensaio
+            </h1>
           </div>
           <p className="text-xs text-slate-400 mt-1">
-            Conecte o Arduino Uno via USB diretamente no navegador Google Chrome/Edge para sincronizar com os celulares dos alunos.
+            Cada aluno conecta o seu Arduino Uno nesta tela e aponta a câmera do celular para o QR Code abaixo.
           </p>
+
+          {/* Selecionador de Bancada */}
+          <div className="flex items-center gap-2 mt-4">
+            <span className="text-xs font-bold text-slate-300">Número da Bancada:</span>
+            <div className="flex items-center gap-1.5">
+              {['1', '2', '3', '4', '5', '6', '7', '8'].map((num) => (
+                <button
+                  key={num}
+                  onClick={() => setBancadaId(num)}
+                  className={`w-8 h-8 rounded-lg font-bold text-xs transition-all ${
+                    bancadaId === num
+                      ? 'bg-amber-500 text-slate-950 shadow-md shadow-amber-500/30 scale-105'
+                      : 'bg-slate-800 text-slate-400 hover:text-white hover:bg-slate-700'
+                  }`}
+                >
+                  {num}
+                </button>
+              ))}
+            </div>
+          </div>
         </div>
 
-        {/* Botão de Conectar Serial */}
+        {/* Botão de Conexão Serial */}
         <div>
           {!isConnected ? (
             <button
               onClick={handleConnect}
               disabled={!browserSupported}
-              className="flex items-center gap-2 px-5 py-2.5 rounded-xl bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold text-xs shadow-lg shadow-amber-500/20 active:scale-95 transition-all"
+              className="flex items-center gap-2.5 px-6 py-3.5 rounded-2xl bg-amber-500 hover:bg-amber-400 text-slate-950 font-black text-xs uppercase tracking-wider shadow-xl shadow-amber-500/20 active:scale-95 transition-all"
             >
-              <Usb className="w-4 h-4" />
-              <span>Conectar Arduino Uno (USB)</span>
+              <Usb className="w-5 h-5" />
+              <span>Conectar Arduino (Bancada {bancadaId})</span>
             </button>
           ) : (
             <button
               onClick={handleDisconnect}
-              className="flex items-center gap-2 px-5 py-2.5 rounded-xl bg-rose-600/20 border border-rose-500/40 hover:bg-rose-600/30 text-rose-300 font-bold text-xs transition-all"
+              className="flex items-center gap-2 px-5 py-3 rounded-xl bg-rose-600/20 border border-rose-500/40 hover:bg-rose-600/30 text-rose-300 font-bold text-xs transition-all"
             >
               <Power className="w-4 h-4" />
-              <span>Desconectar Porta ({portInfo})</span>
+              <span>Desconectar Arduino (Bancada {bancadaId})</span>
             </button>
           )}
         </div>
       </div>
 
-      {/* Alerta de Navegador caso não suporte Web Serial */}
-      {!browserSupported && (
-        <div className="p-4 rounded-xl bg-amber-500/10 border border-amber-500/30 text-amber-300 text-xs flex items-center gap-3">
-          <AlertTriangle className="w-5 h-5 shrink-0" />
-          <span>
-            Atenção: A Web Serial API requer <strong>Google Chrome</strong> ou <strong>Microsoft Edge</strong> no computador para acesso à porta COM USB sem instalação de softwares.
-          </span>
-        </div>
-      )}
-
-      {/* Grid de Estado & Compartilhamento com os Alunos */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-        {/* Status de Comunicação */}
-        <div className="p-5 rounded-2xl bg-slate-900 border border-slate-800 space-y-4">
-          <h2 className="text-xs font-bold uppercase tracking-wider text-slate-400 flex items-center gap-2">
-            <Wifi className="w-4 h-4 text-emerald-400" />
-            <span>Status da Bancada</span>
-          </h2>
-          <div className="space-y-2 text-xs">
-            <div className="flex items-center justify-between p-2.5 rounded-lg bg-slate-950 border border-slate-800">
-              <span className="text-slate-400">Arduino Uno USB</span>
-              <span className={`font-bold flex items-center gap-1 ${isConnected ? 'text-emerald-400' : 'text-slate-500'}`}>
-                <span className={`w-2 h-2 rounded-full ${isConnected ? 'bg-emerald-400 animate-ping' : 'bg-slate-600'}`} />
-                {isConnected ? 'Conectado' : 'Aguardando'}
-              </span>
-            </div>
-            <div className="flex items-center justify-between p-2.5 rounded-lg bg-slate-950 border border-slate-800">
-              <span className="text-slate-400">Estado do Motor</span>
-              <span className={`font-mono font-bold ${motorState === 'ON' ? 'text-emerald-400' : 'text-slate-400'}`}>
-                {motorState === 'ON' ? 'LIGADO (24V/220V)' : 'DESLIGADO'}
-              </span>
-            </div>
-            <div className="flex items-center justify-between p-2.5 rounded-lg bg-slate-950 border border-slate-800">
-              <span className="text-slate-400">Intertravamento</span>
-              <span className={`font-mono font-bold ${emergencyState === 'ACTIVE' ? 'text-rose-400' : 'text-emerald-400'}`}>
-                {emergencyState === 'ACTIVE' ? 'EMERGÊNCIA ATIVA' : 'NORMAL'}
-              </span>
-            </div>
+      {/* Grid: QR Code de Pareamento vs. Status da Bancada */}
+      <div className="grid grid-cols-1 md:grid-cols-12 gap-6 items-stretch">
+        
+        {/* Card do QR Code para o Aluno (Foco Principal de Praticidade) */}
+        <div className="md:col-span-5 p-6 rounded-3xl bg-gradient-to-b from-slate-900 to-slate-950 border-2 border-amber-500/40 shadow-2xl flex flex-col items-center justify-center text-center space-y-4">
+          <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-amber-500/20 text-amber-300 text-xs font-black uppercase tracking-wider">
+            <QrCode className="w-4 h-4" />
+            <span>Pareamento do Celular</span>
           </div>
-        </div>
 
-        {/* Compartilhamento para os Alunos */}
-        <div className="p-5 rounded-2xl bg-slate-900 border border-slate-800 space-y-4">
-          <h2 className="text-xs font-bold uppercase tracking-wider text-slate-400 flex items-center gap-2">
-            <Share2 className="w-4 h-4 text-cyan-400" />
-            <span>Link para os Alunos</span>
+          <h2 className="text-lg font-bold text-white">
+            BANCADA {bancadaId.padStart(2, '0')}
           </h2>
-          <p className="text-xs text-slate-400">
-            Projete este link ou passe para os alunos abrirem no celular no laboratório:
+
+          <p className="text-xs text-slate-400 max-w-xs">
+            Abra a câmera do seu celular e aponte para o QR Code abaixo para controlar este motor:
           </p>
-          <div className="p-2.5 rounded-lg bg-slate-950 border border-slate-800 font-mono text-xs text-cyan-300 break-all select-all">
-            {shareUrl || '/controle'}
+
+          {/* QR Code Renderizado */}
+          <div className="p-3 bg-white rounded-2xl shadow-xl">
+            {qrCodeDataUrl ? (
+              <img
+                src={qrCodeDataUrl}
+                alt={`QR Code Bancada ${bancadaId}`}
+                className="w-52 h-52 object-contain"
+              />
+            ) : (
+              <div className="w-52 h-52 bg-slate-200 animate-pulse rounded-xl" />
+            )}
+          </div>
+
+          {/* Link Alternativo / Código Curto */}
+          <div className="w-full pt-2">
+            <span className="block text-[11px] text-slate-500 mb-1">Ou acesse direto no celular:</span>
+            <a
+              href={controlUrl}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="inline-flex items-center gap-1.5 text-xs font-mono font-bold text-amber-400 hover:text-amber-300 underline"
+            >
+              <span>{controlUrl}</span>
+              <ExternalLink className="w-3.5 h-3.5" />
+            </a>
           </div>
         </div>
 
-        {/* Painel de Override do Professor */}
-        <div className="p-5 rounded-2xl bg-slate-900 border border-slate-800 space-y-4">
-          <h2 className="text-xs font-bold uppercase tracking-wider text-slate-400 flex items-center gap-2">
-            <Power className="w-4 h-4 text-amber-400" />
-            <span>Controle Manual (Professor)</span>
-          </h2>
-          <div className="grid grid-cols-2 gap-2">
-            <button
-              onClick={() => sendSerialCommand('CMD:MOTOR:ON')}
-              className="py-2.5 px-3 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs transition-colors"
-            >
-              Forçar Liga
-            </button>
-            <button
-              onClick={() => sendSerialCommand('CMD:MOTOR:OFF')}
-              className="py-2.5 px-3 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 font-bold text-xs transition-colors"
-            >
-              Forçar Desliga
-            </button>
-            <button
-              onClick={() => sendSerialCommand('CMD:EMERGENCY')}
-              className="col-span-2 py-2.5 px-3 rounded-xl bg-rose-600 hover:bg-rose-500 text-white font-bold text-xs transition-colors flex items-center justify-center gap-2"
-            >
-              <OctagonAlert className="w-4 h-4" />
-              <span>Corte de Emergência</span>
-            </button>
-          </div>
-        </div>
-      </div>
+        {/* Card de Status, Intertravamento e Teste Manual */}
+        <div className="md:col-span-7 space-y-6 flex flex-col justify-between">
+          <div className="p-6 rounded-3xl bg-slate-900 border border-slate-800 space-y-4">
+            <h2 className="text-xs font-bold uppercase tracking-wider text-slate-400 flex items-center gap-2">
+              <Wifi className="w-4 h-4 text-emerald-400" />
+              <span>Status Operacional — Bancada {bancadaId}</span>
+            </h2>
 
-      {/* Console Serial em Tempo Real */}
-      <div className="p-5 rounded-2xl bg-slate-900 border border-slate-800 space-y-3">
-        <div className="flex items-center justify-between">
-          <div className="flex items-center gap-2 text-xs font-bold text-slate-300">
-            <Terminal className="w-4 h-4 text-amber-400" />
-            <span>Terminal Serial Bidirecional (115200 baud)</span>
-          </div>
-          <button
-            onClick={() => setLogs([])}
-            className="text-[11px] text-slate-500 hover:text-slate-300"
-          >
-            Limpar Console
-          </button>
-        </div>
-
-        <div className="h-64 overflow-y-auto rounded-xl bg-slate-950 p-3 font-mono text-xs space-y-1 border border-slate-800/80">
-          {logs.length === 0 ? (
-            <div className="text-slate-600 italic">Aguardando eventos ou conexão serial...</div>
-          ) : (
-            logs.map((log, index) => (
-              <div key={index} className="flex gap-2">
-                <span className="text-slate-600 select-none">[{log.time}]</span>
-                <span
-                  className={
-                    log.type === 'in'
-                      ? 'text-cyan-400'
-                      : log.type === 'out'
-                      ? 'text-emerald-400 font-semibold'
-                      : log.type === 'err'
-                      ? 'text-rose-400'
-                      : 'text-amber-300'
-                  }
-                >
-                  {log.text}
-                </span>
+            <div className="grid grid-cols-2 gap-3 text-xs">
+              <div className="p-3.5 rounded-xl bg-slate-950 border border-slate-800 space-y-1">
+                <span className="text-[11px] text-slate-500">Comunicação USB</span>
+                <div className={`font-bold flex items-center gap-1.5 ${isConnected ? 'text-emerald-400' : 'text-slate-500'}`}>
+                  <span className={`w-2 h-2 rounded-full ${isConnected ? 'bg-emerald-400 animate-ping' : 'bg-slate-600'}`} />
+                  <span>{isConnected ? 'Arduino Conectado' : 'Aguardando Cabo USB'}</span>
+                </div>
               </div>
-            ))
-          )}
+
+              <div className="p-3.5 rounded-xl bg-slate-950 border border-slate-800 space-y-1">
+                <span className="text-[11px] text-slate-500">Estado do Motor 220V</span>
+                <div className={`font-mono font-bold ${motorState === 'ON' ? 'text-emerald-400' : 'text-slate-400'}`}>
+                  {motorState === 'ON' ? 'LIGADO (Relé 24V Ativo)' : 'DESLIGADO (Seguro)'}
+                </div>
+              </div>
+
+              <div className="p-3.5 rounded-xl bg-slate-950 border border-slate-800 space-y-1">
+                <span className="text-[11px] text-slate-500">Segurança / NR-12</span>
+                <div className={`font-mono font-bold ${emergencyState === 'ACTIVE' ? 'text-rose-400' : 'text-emerald-400'}`}>
+                  {emergencyState === 'ACTIVE' ? 'EMERGÊNCIA ACIONADA' : 'NORMAL (Liberado)'}
+                </div>
+              </div>
+
+              <div className="p-3.5 rounded-xl bg-slate-950 border border-slate-800 space-y-1">
+                <span className="text-[11px] text-slate-500">Porta Serial Aberta</span>
+                <div className="font-mono text-slate-300 truncate">
+                  {portInfo}
+                </div>
+              </div>
+            </div>
+
+            {/* Teste Manual pelo Computador */}
+            <div className="pt-2 border-t border-slate-800/80">
+              <span className="block text-[11px] font-bold text-slate-400 mb-2">Comandos Locais (Teste na Bancada):</span>
+              <div className="flex gap-2">
+                <button
+                  onClick={() => sendSerialCommand('CMD:MOTOR:ON')}
+                  className="flex-1 py-2.5 px-3 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs"
+                >
+                  Testar Liga Motor
+                </button>
+                <button
+                  onClick={() => sendSerialCommand('CMD:MOTOR:OFF')}
+                  className="flex-1 py-2.5 px-3 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 font-bold text-xs"
+                >
+                  Testar Desliga Motor
+                </button>
+                <button
+                  onClick={() => sendSerialCommand('CMD:EMERGENCY')}
+                  className="py-2.5 px-3 rounded-xl bg-rose-600 hover:bg-rose-500 text-white font-bold text-xs flex items-center gap-1.5"
+                >
+                  <OctagonAlert className="w-4 h-4" />
+                  <span>Emergência</span>
+                </button>
+              </div>
+            </div>
+          </div>
+
+          {/* Console Serial da Bancada */}
+          <div className="p-4 rounded-3xl bg-slate-900 border border-slate-800 space-y-2">
+            <div className="flex items-center justify-between text-xs font-bold text-slate-300">
+              <div className="flex items-center gap-2">
+                <Terminal className="w-4 h-4 text-amber-400" />
+                <span>Console Serial (Bancada {bancadaId})</span>
+              </div>
+              <button
+                onClick={() => setLogs([])}
+                className="text-[11px] text-slate-500 hover:text-slate-300"
+              >
+                Limpar
+              </button>
+            </div>
+
+            <div className="h-40 overflow-y-auto rounded-xl bg-slate-950 p-2.5 font-mono text-xs space-y-1 border border-slate-800/80">
+              {logs.length === 0 ? (
+                <div className="text-slate-600 italic">Aguardando eventos da Bancada {bancadaId}...</div>
+              ) : (
+                logs.map((log, index) => (
+                  <div key={index} className="flex gap-2">
+                    <span className="text-slate-600 select-none">[{log.time}]</span>
+                    <span
+                      className={
+                        log.type === 'in'
+                          ? 'text-cyan-400'
+                          : log.type === 'out'
+                          ? 'text-emerald-400 font-semibold'
+                          : log.type === 'err'
+                          ? 'text-rose-400'
+                          : 'text-amber-300'
+                      }
+                    >
+                      {log.text}
+                    </span>
+                  </div>
+                ))
+              )}
+            </div>
+          </div>
         </div>
       </div>
     </div>
