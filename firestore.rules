@@ -1,0 +1,26 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+    
+    // Helper: Verifica se o usuário está autenticado
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+    
+    // Helper: Verifica se o usuário logado possui a role 'admin'
+    function isAdmin() {
+      return isAuthenticated() && 
+        get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin';
+    }
+
+    // Regras para a coleção de usuários e perfis
+    match /users/{userId} {
+      // Usuário pode ler seu próprio perfil, ou admin pode ler todos
+      allow read: if isAuthenticated() && (request.auth.uid == userId || isAdmin());
+      
+      // Apenas Administrador pode criar ou alterar papéis e designações de bancadas
+      allow write: if isAdmin();
+    }
+  }
+}

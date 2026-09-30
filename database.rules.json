@@ -1,0 +1,30 @@
+{
+  "rules": {
+    "panels": {
+      "$panelId": {
+        "state": {
+          ".read": "auth != null",
+          ".write": "auth != null"
+        },
+        "command": {
+          ".read": "auth != null",
+          ".write": "auth != null"
+        },
+        "meta": {
+          ".read": "auth != null",
+          ".write": "auth != null"
+        }
+      }
+    },
+    "global": {
+      "emergency": {
+        ".read": "auth != null",
+        ".write": "auth != null"
+      }
+    },
+    "bancadas": {
+      ".read": "auth != null",
+      ".write": "auth != null"
+    }
+  }
+}
