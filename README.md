@@ -9,7 +9,7 @@
 [![React 19](https://img.shields.io/badge/React-19.0.0-61DAFB?style=for-the-badge&logo=react&logoColor=black)](https://react.dev/)
 [![TypeScript](https://img.shields.io/badge/TypeScript-5.8-3178C6?style=for-the-badge&logo=typescript&logoColor=white)](https://www.typescriptlang.org/)
 [![Tailwind CSS 4](https://img.shields.io/badge/Tailwind_CSS-4.0-06B6D4?style=for-the-badge&logo=tailwindcss&logoColor=white)](https://tailwindcss.com/)
-[![Firebase](https://img.shields.io/badge/Firebase-Realtime_&_Auth-FFCA28?style=for-the-badge&logo=firebase&logoColor=black)](https://firebase.google.com/)
+[![Firebase](https://img.shields.io/badge/Firebase-Realtime_Database-FFCA28?style=for-the-badge&logo=firebase&logoColor=black)](https://firebase.google.com/)
 [![Arduino Uno](https://img.shields.io/badge/Arduino_Uno-C%2B%2B_Firmware-00979D?style=for-the-badge&logo=arduino&logoColor=white)](https://www.arduino.cc/)
 [![Web Serial API](https://img.shields.io/badge/Web_Serial_API-Native_Browser-4285F4?style=for-the-badge&logo=googlechrome&logoColor=white)](https://developer.mozilla.org/en-US/docs/Web/API/Web_Serial_API)
 [![Vercel Deploy](https://img.shields.io/badge/Deploy-Vercel-black?style=for-the-badge&logo=vercel&logoColor=white)](https://vercel.com/)
@@ -65,7 +65,6 @@ flowchart TD
         Aluno["📱 Smartphone / PC do Aluno<br/>IHM de Controle (Next.js)"]
         Vercel["▲ Vercel Edge Network<br/>App Router & SSR"]
         Firebase["🔥 Firebase Realtime Database<br/>Sync de Estados & Comandos"]
-        Firestore["🗄️ Cloud Firestore<br/>Usuários, Turmas & RBAC"]
     end
 
     subgraph Edge ["💻 Estação do Instrutor / Bancada"]
@@ -82,7 +81,6 @@ flowchart TD
 
     Aluno -->|"HTTPS / WSS"| Vercel
     Aluno -->|"Escrita de Comandos"| Firebase
-    Vercel --> Firestore
     Firebase <-->|"Escuta Realtime State"| WebSerial
     WebSerial <-->|"Serial USB - Porta COM"| Arduino
     Arduino -->|"Pino Digital D7 - LOW Ativo"| Rele
@@ -226,7 +224,6 @@ A comunicação serial opera a **115.200 bps**, com frames em texto ASCII termin
 | **Trilha Pedagógica** | [`/ensino`](src/app/ensino/page.tsx) | Diagrama esquemático animado (`InteractiveCircuit.tsx`), fluxo de corrente e normas técnicas. |
 | **Bancada do Instrutor** | [`/bancada`](src/app/bancada/page.tsx) | Conexão nativa com a porta COM via **Web Serial API**, seletor de baud rate e log de pacotes. |
 | **Painel Supervisor** | [`/supervisor`](src/app/supervisor/page.tsx) | Grid com telemetria das 12 bancadas em tempo real e botão de **Parada de Emergência Global**. |
-| **Gestão & Turmas** | [`/admin/turma`](src/app/admin/turma/page.tsx) | Alocação de alunos por QR Code e gerenciamento de permissões (RBAC). |
 
 ---
 
@@ -304,32 +301,22 @@ motor-link/
 │   ├── README.md                     # Instruções do firmware e teste serial
 │   └── arduino_motor_link/
 │       └── arduino_motor_link.ino    # Sketch C++ do Arduino Uno
-├── scripts/                          # Utilitários administrativos
-│   └── create-user.mjs               # Script para provisionar contas RBAC
 ├── src/                              # Aplicação Next.js 15 (App Router)
 │   ├── app/
-│   │   ├── layout.tsx                # Layout global com providers
+│   │   ├── layout.tsx                # Layout global com navegação
 │   │   ├── page.tsx                  # Landing page didática
-│   │   ├── controle/                 # IHM Mobile do Aluno
+│   │   ├── controle/                 # IHM Mobile do Aluno (Bancadas 1 a 12)
 │   │   ├── ensino/                   # Módulo didático e aulas
 │   │   ├── bancada/                  # Painel Web Serial do Instrutor
-│   │   ├── supervisor/               # Supervisório multi-bancada (1-12)
-│   │   └── admin/                    # Gestão de alunos e turmas
+│   │   └── supervisor/               # Supervisório multi-bancada (1-12)
 │   ├── components/
-│   │   ├── AppNavbar.tsx             # Barra de navegação e status
 │   │   └── InteractiveCircuit.tsx    # Simulador interativo da cadeia de potência
-│   ├── contexts/
-│   │   └── AuthContext.tsx           # Contexto de autenticação Firebase
-│   ├── hooks/
-│   │   └── useMotorControl.ts        # Hook reativo de controle e telemetria
 │   ├── lib/
-│   │   ├── firebase.ts               # Configuração do Firebase Client
-│   │   ├── firebase-v2.ts            # Sincronização RTDB com isolamento de painel
+│   │   ├── firebase.ts               # Sincronização RTDB em tempo real
 │   │   └── webserial.ts              # Driver da Web Serial API no navegador
 │   └── types/
 │       └── index.ts                  # Tipagens TypeScript estritas
 ├── .env.example                      # Modelo de variáveis de ambiente
-├── firebase.json                     # Regras e deployment do Firebase
 ├── LICENSE                           # Licença de código aberto MIT
 └── package.json                      # Dependências e scripts do projeto
 ```

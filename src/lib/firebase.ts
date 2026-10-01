@@ -1,7 +1,3 @@
-/**
- * @deprecated This file contains the legacy V1 database structure and functions.
- * Please use firebase-v2.ts and the useMotorControl hook for the new isolated structure.
- */
 import { initializeApp, getApps, getApp, type FirebaseApp } from 'firebase/app';
 import { getDatabase, ref, onValue, set, update, type Database } from 'firebase/database';
 import { getFirestore, type Firestore } from 'firebase/firestore';
